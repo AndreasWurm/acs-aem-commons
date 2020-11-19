@@ -25,6 +25,7 @@ import com.adobe.granite.ui.clientlibs.HtmlLibrary;
 import com.adobe.granite.ui.clientlibs.HtmlLibraryManager;
 import com.adobe.granite.ui.clientlibs.LibraryType;
 import com.day.cq.wcm.contentsync.PathRewriterOptions;
+import com.google.common.collect.ImmutableMap;
 import junitx.util.PrivateAccessor;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.sling.api.SlingConstants;
@@ -57,6 +58,7 @@ import java.io.UnsupportedEncodingException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -428,6 +430,58 @@ public class VersionedClientlibsTransformerFactoryTest {
         verifyNoMoreInteractions(htmlLibraryManager);
 
         assertEquals(PROXY_PATH + "/resources/some-resource.css", attributesCaptor.getValue().getValue(0));
+    }
+    @Test
+    public void testConditionalHashingClientLibrary() throws Exception {
+        PrivateAccessor.setField(factory, "librarypathMatcher", Pattern.compile("(?!\\/apps\\/a).*"));
+
+        ClientLibrary clientLib = mock(ClientLibrary.class);
+        when(clientLib.getTypes()).thenReturn(Collections.singleton(LibraryType.JS));
+        when(clientLib.allowProxy()).thenReturn(true);
+
+        String libPathA = "/apps/a/test";
+        String libPathB = "/apps/b/test";
+        String proxyPathA = "/etc.clientlibs/a/test";
+        String proxyPathB = "/etc.clientlibs/b/test";
+
+        when(htmlLibraryManager.getLibraries()).thenReturn(ImmutableMap.<String, ClientLibrary>builder()
+            .put(libPathA, clientLib)
+            .put(libPathB, clientLib)
+            .build());
+
+        HtmlLibrary proxiedLibraryA = mock(HtmlLibrary.class);
+        when(proxiedLibraryA.getLibraryPath()).thenReturn(libPathA);
+
+        HtmlLibrary proxiedLibraryB = mock(HtmlLibrary.class);
+        when(proxiedLibraryB.getLibraryPath()).thenReturn(libPathB);
+        when(proxiedLibraryB.getInputStream(false))
+            .thenReturn(new java.io.ByteArrayInputStream("I love strings".getBytes()));
+
+        when(htmlLibraryManager.getLibrary(eq(LibraryType.JS), eq(libPathA))).thenReturn(proxiedLibraryA);
+        when(htmlLibraryManager.getLibrary(eq(LibraryType.JS), eq(libPathB))).thenReturn(proxiedLibraryB);
+
+        final AttributesImpl attrsA = new AttributesImpl();
+        attrsA.addAttribute("", "src", "", "CDATA", proxyPathA + ".js");
+        attrsA.addAttribute("", "type", "", "CDATA", "text/javascript");
+
+        transformer.startElement(null, "script", null, attrsA);
+
+        final AttributesImpl attrsB = new AttributesImpl();
+        attrsB.addAttribute("", "src", "", "CDATA", proxyPathB + ".js");
+        attrsB.addAttribute("", "type", "", "CDATA", "text/javascript");
+
+        transformer.startElement(null, "script", null, attrsB);
+
+        ArgumentCaptor<Attributes> attributesCaptor = ArgumentCaptor.forClass(Attributes.class);
+
+        verify(handler, times(2)).startElement(isNull(), eq("script"), isNull(),
+            attributesCaptor.capture());
+
+        assertEquals(proxyPathA + ".js",
+            attributesCaptor.getAllValues().get(0).getValue(0));
+
+        assertEquals(proxyPathB + "." + FAKE_STREAM_CHECKSUM + ".js",
+            attributesCaptor.getAllValues().get(1).getValue(0));
     }
 
     @Test

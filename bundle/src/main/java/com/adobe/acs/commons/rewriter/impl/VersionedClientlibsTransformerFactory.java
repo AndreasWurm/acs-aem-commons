@@ -115,6 +115,8 @@ public final class VersionedClientlibsTransformerFactory extends AbstractGuavaCa
 
     private static final boolean DEFAULT_ENFORCE_MD5 = false;
 
+    private static final String DEFAULT_LIBRARYPATH_MATCHER = ".*";
+
     @Property(label="MD5 Cache Size", description="Maximum size of the md5 cache.", intValue = DEFAULT_MD5_CACHE_SIZE)
     private static final String PROP_MD5_CACHE_SIZE = "md5cache.size";
 
@@ -124,6 +126,10 @@ public final class VersionedClientlibsTransformerFactory extends AbstractGuavaCa
     @Property(label="Enforce MD5", description="Enables a filter which returns a 404 error if the MD5 in the request does not match the expected value",
         boolValue = DEFAULT_ENFORCE_MD5)
     private static final String PROP_ENFORCE_MD5 = "enforce.md5";
+
+    @Property(label = "Library Path Matcher",
+        description = "Only library paths matching this regex will be versioned.")
+    private static final String PROP_LIBRARYPATH_MATCHER = "librarypath.matcher";
 
     private static final String ATTR_JS_PATH = "src";
     private static final String ATTR_CSS_PATH = "href";
@@ -145,6 +151,8 @@ public final class VersionedClientlibsTransformerFactory extends AbstractGuavaCa
     private boolean disableVersioning;
 
     private boolean enforceMd5;
+
+    private Pattern librarypathMatcher;
 
     @Reference
     private HtmlLibraryManager htmlLibraryManager;
@@ -176,6 +184,8 @@ public final class VersionedClientlibsTransformerFactory extends AbstractGuavaCa
             filterReg = bundleContext.registerService(Filter.class,
                     new BadMd5VersionedClientLibsFilter(), filterProps);
         }
+        this.librarypathMatcher = Pattern
+            .compile(PropertiesUtil.toString(props.get(PROP_LIBRARYPATH_MATCHER), DEFAULT_LIBRARYPATH_MATCHER));
     }
 
     @Deactivate
@@ -244,7 +254,7 @@ public final class VersionedClientlibsTransformerFactory extends AbstractGuavaCa
 
             final HtmlLibrary htmlLibrary = getLibrary(libraryType, libraryPath, resourceResolver);
 
-            if (htmlLibrary != null) {
+            if (htmlLibrary != null && librarypathMatcher.matcher(htmlLibrary.getLibraryPath()).matches()) {
                 StringBuilder builder = new StringBuilder();
                 builder.append(libraryPath);
                 builder.append(".");
